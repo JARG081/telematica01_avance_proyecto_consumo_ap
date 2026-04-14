@@ -1,0 +1,249 @@
+﻿# EduRAG — Integration Reference
+> Documento de referencia para integración entre proyectos.
+> Copiar este archivo en la raíz de cada proyecto (frontend y backend).
+
+---
+
+## Arquitectura general
+
+```
+[edurag-frontend]  →  POST /api/auth/login        →  [API Auth externa - NO modificar]
+[edurag-frontend]  →  POST /api/auth/register      →  [API Auth externa - NO modificar]
+[edurag-frontend]  →  GET|POST|DELETE /api/...     →  [EduRAG.CollectionsService]
+[EduRAG.CollectionsService]  →  valida JWT localmente (NO llama API auth)
+```
+
+---
+
+## Proyectos involucrados
+
+| Proyecto | Tipo | Puerto local | Responsabilidad |
+|---|---|---|---|
+| API Auth externa | .NET (no tocar) | `http://localhost:5132` | Login, register, emisión de JWT |
+| EduRAG.CollectionsService | .NET 8 Web API | `http://localhost:5000` | Colecciones y documentos |
+| edurag-frontend | React + Vite | `http://localhost:5173` | UI, consumo de ambas APIs |
+
+---
+
+## API Auth externa
+
+> Esta API ya está implementada. No se modifica ni se replica.
+
+### Endpoints
+
+#### POST /api/auth/login
+```json
+// Request
+{
+  "usernameOrEmail": "admin",
+  "password": "Admin123*"
+}
+
+// Response 200 OK
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "user": {
+    "userId": "5d9b1b80-7d65-4e07-9a16-0123456789ab",
+    "email": "ana@universidad.edu",
+    "role": "profesor"
+  }
+}
+
+// Response 401 Unauthorized
+{ "message": "Invalid credentials" }
+```
+
+#### POST /api/auth/register
+```json
+// Request
+{
+  "name": "Juan Perez",
+  "email": "juan@universidad.edu",
+  "password": "AnotherSecurePassword123*",
+  "role": "estudiante"
+}
+
+// Response 201 Created
+{
+  "message": "User registered successfully",
+  "user": {
+    "userId": "f6d7c7c1-89d9-4f4e-aac2-abcdef123456",
+    "email": "juan@universidad.edu",
+    "role": "estudiante"
+  }
+}
+
+// Response 409 Conflict
+{ "message": "Email already exists" }
+```
+
+---
+
+## JWT — Valores exactos de configuración
+
+> Estos valores deben coincidir exactamente entre la API auth y el backend de colecciones.
+
+```json
+{
+  "Jwt": {
+    "Key": "UNILLANOS.TELEMATICA1.2026.1",
+    "Issuer": "MiniIdentityApi",
+    "Audience": "MiniIdentityApiUsers"
+  }
+}
+```
+
+### Claims presentes en el token
+
+| Claim | Descripción |
+|---|---|
+| `sub` | Identificador del usuario (equivale a userId) |
+| `email` | Email del usuario |
+| `unique_name` | Username |
+| `role` | Rol del usuario: `profesor` o `estudiante` |
+
+### Algoritmo de firma
+- `HS256` (HMAC SHA-256)
+
+---
+
+## EduRAG.CollectionsService — Contrato de endpoints
+
+### Modelos
+
+```json
+// Collection
+{
+  "id": "guid",
+  "name": "Unidad 1 - TCP/IP",
+  "description": "Material de la primera unidad",
+  "createdByUserId": "sub del JWT",
+  "createdAt": "2026-04-13T00:00:00Z",
+  "documents": []
+}
+
+// Document
+{
+  "id": "guid",
+  "title": "Introducción a TCP/IP",
+  "type": "PDF",
+  "description": "Capítulo 1 del libro",
+  "collectionId": "guid",
+  "uploadedAt": "2026-04-13T00:00:00Z"
+}
+```
+
+### Endpoints
+
+| Método | Ruta | Auth requerida | Rol requerido | Respuesta |
+|---|---|---|---|---|
+| GET | /api/collections | No | — | 200 |
+| GET | /api/collections/{id} | No | — | 200 / 404 |
+| POST | /api/collections | Sí | profesor | 201 / 401 / 403 |
+| DELETE | /api/collections/{id} | Sí | profesor | 204 / 401 / 403 / 404 |
+| POST | /api/collections/{id}/documents | Sí | profesor | 201 / 401 / 403 / 404 |
+| DELETE | /api/documents/{id} | Sí | profesor | 204 / 401 / 403 / 404 |
+
+### Configuración obligatoria en Program.cs
+
+- JWT validado localmente con Key, Issuer y Audience de la sección anterior
+- El backend NO implementa login ni register
+- El backend NO llama a la API auth en ningún request
+- CORS habilitado para `http://localhost:5173`
+- Claim de rol extraído desde `role` o `ClaimTypes.Role`
+- Claim de userId extraído desde `sub`
+
+---
+
+## edurag-frontend — Responsabilidades
+
+### Variables de entorno (.env.local)
+
+```env
+VITE_AUTH_API_BASE_URL=http://localhost:5132
+VITE_BACKEND_BASE_URL=http://localhost:5000
+VITE_TOKEN_STORAGE_KEY=accessToken
+```
+
+### Páginas mínimas
+
+| Ruta | Descripción |
+|---|---|
+| /login | Formulario que llama POST /api/auth/login |
+| /register | Formulario que llama POST /api/auth/register |
+| /dashboard | Lista colecciones — protegida, redirige a /login si no hay token |
+| /collections/:id | Detalle de colección con sus documentos |
+
+### Comportamiento esperado
+
+- Token guardado en `localStorage` bajo la clave `accessToken`
+- Token enviado en `Authorization: Bearer <token>` en todos los requests al backend
+- Rol del usuario obtenido decodificando el payload del JWT (base64)
+- Si el rol es `profesor`: mostrar botones de crear/eliminar
+- Si el rol es `estudiante`: solo lectura
+- Si no hay token: redirigir automáticamente a `/login`
+
+### Ejemplo de decodificación de rol desde JWT (sin librería)
+
+```javascript
+function getRoleFromToken(token) {
+  const payload = JSON.parse(atob(token.split('.')[1]));
+  return payload.role;
+}
+```
+
+---
+
+## Flujo end-to-end completo
+
+```
+1. Usuario abre frontend → /login
+2. Frontend POST /api/auth/login → API Auth externa
+3. API Auth devuelve accessToken + user.role
+4. Frontend guarda token en localStorage
+5. Frontend redirige a /dashboard
+6. Frontend GET /api/collections → CollectionsService (sin token, público)
+7. Profesor crea colección: POST /api/collections con Authorization: Bearer <token>
+8. CollectionsService valida JWT localmente → extrae sub y role
+9. Si role === "profesor" → 201 Created
+10. Si role === "estudiante" → 403 Forbidden
+11. Si token inválido o ausente → 401 Unauthorized
+```
+
+---
+
+## Checklist de pruebas manuales (PowerShell)
+
+```powershell
+$backend = "http://localhost:5000"
+$tokenProfesor = "<JWT_PROFESOR>"
+$tokenEstudiante = "<JWT_ESTUDIANTE>"
+
+# GET público → debe retornar 200
+Invoke-RestMethod -Method Get -Uri "$backend/api/collections"
+
+# POST sin token → debe retornar 401
+$body = @{ name = "Test"; description = "Test" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$backend/api/collections" -ContentType "application/json" -Body $body
+
+# POST con estudiante → debe retornar 403
+Invoke-RestMethod -Method Post -Uri "$backend/api/collections" `
+  -Headers @{ Authorization = "Bearer $tokenEstudiante" } `
+  -ContentType "application/json" -Body $body
+
+# POST con profesor → debe retornar 201
+Invoke-RestMethod -Method Post -Uri "$backend/api/collections" `
+  -Headers @{ Authorization = "Bearer $tokenProfesor" } `
+  -ContentType "application/json" -Body $body
+```
+
+---
+
+## Notas finales
+
+- En red local (presentación), reemplazar `localhost` por la IP de la máquina servidor
+- La API auth también corre en red bajo `http://<SERVER_IP>:5132`
+- Nunca hardcodear el JWT Key en código fuente — usar `appsettings.Development.json` o variables de entorno
+- Este archivo es solo referencia — no contiene código ejecutable del proyecto
