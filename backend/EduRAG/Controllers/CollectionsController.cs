@@ -61,6 +61,24 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
 
         return CreatedAtAction(nameof(GetCollection), new { id = collection.Id }, collection);
     }
+    
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = "profesor")]
+    public async Task<ActionResult<Collection>> UpdateCollection(Guid id, [FromBody] UpdateCollectionRequest request)
+    {
+        var collection = await dbContext.Collections.FindAsync(id);
+        if (collection is null)
+        {
+            return NotFound();
+        }
+
+        collection.Name = request.Name;
+        collection.Description = request.Description;
+
+        await dbContext.SaveChangesAsync();
+
+        return Ok(collection);
+    }
 
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "profesor")]
