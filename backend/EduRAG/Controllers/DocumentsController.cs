@@ -36,6 +36,33 @@ public class DocumentsController(EduRAGDbContext dbContext) : ControllerBase
         return Created($"/api/documents/{document.Id}", document);
     }
 
+    [HttpGet("documents/{id:guid}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<Document>> GetDocument(Guid id)
+    {
+        var document = await dbContext.Documents.FindAsync(id);
+        return document is null ? NotFound() : Ok(document);
+    }
+
+    [HttpPut("documents/{id:guid}")]
+    [Authorize(Roles = "profesor")]
+    public async Task<ActionResult<Document>> UpdateDocument(Guid id, [FromBody] UpdateDocumentRequest request)
+    {
+        var document = await dbContext.Documents.FindAsync(id);
+        if (document is null)
+        {
+            return NotFound();
+        }
+
+        document.Title = request.Title;
+        document.Type = request.Type;
+        document.Description = request.Description;
+
+        await dbContext.SaveChangesAsync();
+
+        return Ok(document);
+    }
+
     [HttpDelete("documents/{id:guid}")]
     [Authorize(Roles = "profesor")]
     public async Task<IActionResult> DeleteDocument(Guid id)
