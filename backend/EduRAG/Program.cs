@@ -100,10 +100,16 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+try
 {
+    using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<EduRAGDbContext>();
+    dbContext.Database.SetCommandTimeout(60);
     dbContext.Database.EnsureCreated();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Warning: Could not run EnsureCreated: {ex.Message}");
 }
 
 if (app.Environment.IsDevelopment())
@@ -111,7 +117,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
