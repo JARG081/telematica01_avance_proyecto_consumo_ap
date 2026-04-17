@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prueba de carga de archivos</title>
+  <link rel="stylesheet" href="/upload-test.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Upload de archivo (máx. 100MB)</h1>
+    <p>Endpoint: <code>POST /api/files/upload</code></p>
+
+    <form id="uploadForm">
+      <label for="fileInput">Selecciona un archivo:</label>
+      <input id="fileInput" name="file" type="file" required />
+      <button type="submit">Subir archivo</button>
+    </form>
+
+    <section>
+      <h2>Resultado</h2>
+      <pre id="result">Esperando carga...</pre>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    const result = document.getElementById('result');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        result.textContent = 'Selecciona un archivo.';
+        return;
+      }
+
+      if (file.size > 104857600) {
+        result.textContent = 'El archivo excede 100MB.';
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      result.textContent = 'Subiendo...';
+
+      try {
+        const response = await fetch('/api/files/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const text = await response.text();
+        let body;
+
+        try {
+          body = JSON.parse(text);
+        } catch {
+          body = text;
+        }
+
+        result.textContent = JSON.stringify({
+          status: response.status,
+          ok: response.ok,
+          body
+        }, null, 2);
+      } catch (error) {
+        result.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>

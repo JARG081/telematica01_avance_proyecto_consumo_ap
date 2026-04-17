@@ -9,12 +9,21 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddDbContext<EduRAGDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    if (!string.IsNullOrWhiteSpace(connectionString) && connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase))
+    {
+        options.UseSqlite(connectionString);
+    }
+    else
+    {
+        options.UseNpgsql(connectionString);
+    }
+});
 builder.Services.AddSingleton<ILocalRoleResolver, ConfigurationLocalRoleResolver>();
 
 builder.Services.AddCors(options =>
@@ -106,17 +115,23 @@ try
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<EduRAGDbContext>();
-    dbContext.Database.SetCommandTimeout(60);
-    dbContext.Database.EnsureCreated();
+    if (dbContext.Database.IsSqlite())
+    {
+        await dbContext.Database.EnsureCreatedAsync();
+    }
+    else
+    {
+        dbContext.Database.SetCommandTimeout(30);
+        await dbContext.Database.MigrateAsync();
+    }
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"Warning: Could not run EnsureCreated: {ex.Message}");
+    Console.WriteLine($"Warning: Could not apply migrations: {ex.Message}");
 }
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
     app.UseSwagger();
     app.UseSwaggerUI();
 }
