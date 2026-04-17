@@ -3,10 +3,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EduRAG.Data;
 
-public class EduRAGDbContext(DbContextOptions<EduRAGDbContext> options) : DbContext(options)
+public class EduRAGDbContext : DbContext
 {
+    public EduRAGDbContext(DbContextOptions<EduRAGDbContext> options) : base(options) { }
+
     public DbSet<Collection> Collections => Set<Collection>();
     public DbSet<Document> Documents => Set<Document>();
+
+    // ESTO FORZARÁ LA CONEXIÓN SIN IMPORTAR EL JSON
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if (!optionsBuilder.IsConfigured)
+        {
+            optionsBuilder.UseNpgsql("Host=db.pnftoshyyptroxcyoyib.supabase.co;Port=5432;Database=postgres;Username=postgres;Password=unillanosconnect;SSL Mode=Require;Trust Server Certificate=true");
+        }
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
