@@ -1,0 +1,11 @@
+services:
+  edurag-frontend:
+    build:
+      context: ./frontend/edurag-frontend
+      dockerfile: Dockerfile
+      target: deps
+    command: npm run dev -- --host
+    volumes:
+      - ./frontend/edurag-frontend/src:/app/src
+    ports:
+      - "5173:5173"
