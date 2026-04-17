@@ -11,11 +11,48 @@ public class FileUploadController(
     IWebHostEnvironment environment,
     IOptions<FileStorageOptions> storageOptions) : ControllerBase
 {
+    public class UploadFileRequest
+    {
+        public IFormFile? File { get; set; }
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public IActionResult ListUploadedFiles()
+    {
+        var options = storageOptions.Value;
+        var basePath = options.BasePath;
+        var uploadsPath = Path.IsPathRooted(basePath)
+            ? basePath
+            : Path.Combine(environment.ContentRootPath, basePath);
+
+        if (!Directory.Exists(uploadsPath))
+        {
+            return Ok(Array.Empty<object>());
+        }
+
+        var files = Directory
+            .EnumerateFiles(uploadsPath)
+            .Select(path => new FileInfo(path))
+            .OrderByDescending(file => file.CreationTimeUtc)
+            .Select(file => new
+            {
+                fileName = file.Name,
+                size = file.Length,
+                createdAtUtc = file.CreationTimeUtc
+            })
+            .ToList();
+
+        return Ok(files);
+    }
+
     [HttpPost("upload")]
     [AllowAnonymous]
+    [Consumes("multipart/form-data")]
     [RequestFormLimits(MultipartBodyLengthLimit = 104857600)]
-    public async Task<IActionResult> Upload([FromForm] IFormFile? file)
+    public async Task<IActionResult> Upload([FromForm] UploadFileRequest request)
     {
+        var file = request.File;
         if (file is null || file.Length == 0)
         {
             return BadRequest("Debe enviar un archivo.");

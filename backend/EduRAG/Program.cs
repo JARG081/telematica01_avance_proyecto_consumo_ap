@@ -1,6 +1,7 @@
 using System.Text;
 using System.Security.Claims;
 using EduRAG.Data;
+using EduRAG.Options;
 using EduRAG.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection(FileStorageOptions.SectionName));
 
 builder.Services.AddDbContext<EduRAGDbContext>(options =>
 {
