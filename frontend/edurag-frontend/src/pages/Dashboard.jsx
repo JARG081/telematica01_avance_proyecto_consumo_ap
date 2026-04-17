@@ -22,19 +22,20 @@ export default function Dashboard() {
   // File upload
   const [file, setFile] = useState(null);
   const [uploadMsg, setUploadMsg] = useState('');
-
-  useEffect(() => {
-    loadCollections();
-  }, []);
-
+  
   const loadCollections = async () => {
     try {
-      const res = await eduragApi.get('/collections');
+      const res = await eduragApi.get('/Collections');
+      console.log(res)
       setCollections(res.data);
     } catch {
       setError('Error al cargar colecciones');
     }
   };
+  useEffect(() => {
+    loadCollections();
+  }, []);
+
 
   const selectCollection = async (col) => {
     try {
