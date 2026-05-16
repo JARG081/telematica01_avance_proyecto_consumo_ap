@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { eduragApi } from '../services/api';
+import Navbar from '../components/Navbar';
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const isProfesor = user?.role === 'profesor';
 
   const [collections, setCollections] = useState([]);
@@ -94,21 +95,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-bold">EduRAG</h1>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-gray-600">
-            {user?.username} ({user?.role || 'usuario'})
-          </span>
-          <button
-            onClick={logout}
-            className="text-red-600 hover:underline"
-          >
-            Cerrar Sesion
-          </button>
-        </div>
-      </header>
+      <Navbar />
 
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         {error && (
