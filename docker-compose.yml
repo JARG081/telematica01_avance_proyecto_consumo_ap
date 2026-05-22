@@ -12,6 +12,8 @@ services:
       context: ./backend/EduRAG
       dockerfile: Dockerfile
     container_name: edurag-backend
+    environment:
+      ConnectionStrings__DefaultConnection: Data Source=/app/edurag.db
     ports:
       - "5004:5004"
 

@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 export const authApi = axios.create({
-  baseURL: 'http://localhost:5132/api',
+  baseURL: import.meta.env.VITE_AUTH_API_URL || 'http://localhost:5132/api',
 });
 
 export const eduragApi = axios.create({
-  baseURL: 'http://localhost:5004/api',
+  baseURL: import.meta.env.VITE_EDURAG_API_URL || 'http://localhost:5004/api',
 });
 
 eduragApi.interceptors.request.use((config) => {
