@@ -3,7 +3,7 @@ name: Build and Deploy to Azure App Service
 on:
   push:
     branches:
-      - main  # Cambia esto si tu rama principal se llama master o de otra forma
+      - main  # Asegúrate de que esta sea tu rama principal
 
 jobs:
   build-and-deploy:
@@ -25,9 +25,11 @@ jobs:
         docker build . -t containeredurag.azurecr.io/eduragapp:latest
         docker push containeredurag.azurecr.io/eduragapp:latest
 
-    - name: Deploy to Azure Web App
-      uses: azure/webapps-deploy@v2
+    - name: Azure Login
+      uses: azure/login@v1
       with:
-        app-name: 'EduRag'
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        images: 'containeredurag.azurecr.io/eduragapp:latest'
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy to Azure Web App
+      run: |
+        az webapp config container set --name EduRag --resource-group edurag --docker-custom-image-name containeredurag.azurecr.io/eduragapp:latest
