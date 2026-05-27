@@ -1,4 +1,4 @@
-﻿using MiniIdentityApi.Application.DTOs.Auth;
+using MiniIdentityApi.Application.DTOs.Auth;
 using MiniIdentityApi.Application.Interfaces;
 using MiniIdentityApi.Domain.Entities;
 using MiniIdentityApi.Domain.Enums;
@@ -8,15 +8,18 @@ namespace MiniIdentityApi.Application.Services;
 public class AuthenticationService
 {
     private readonly IUserRepository _userRepository;
+    private readonly IRoleRepository _roleRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly ITokenService _tokenService;
 
     public AuthenticationService(
         IUserRepository userRepository,
+        IRoleRepository roleRepository,
         IPasswordHasher passwordHasher,
         ITokenService tokenService)
     {
         _userRepository = userRepository;
+        _roleRepository = roleRepository;
         _passwordHasher = passwordHasher;
         _tokenService = tokenService;
     }
@@ -43,6 +46,11 @@ public class AuthenticationService
 
         var credential = new Credential(hash, salt);
         var user = new User(request.Username, request.Email, credential);
+
+        // Assign default 'estudiante' role
+        var estudianteRole = _roleRepository.FindByName("estudiante");
+        if (estudianteRole is not null)
+            user.AddRole(estudianteRole);
 
         _userRepository.Save(user);
     }

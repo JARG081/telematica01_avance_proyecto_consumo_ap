@@ -90,4 +90,29 @@ public class FileUploadController(
             storagePath = uploadsPath
         });
     }
+
+    [HttpGet("{fileName}")]
+    [AllowAnonymous]
+    public IActionResult GetFile(string fileName)
+    {
+        var options = storageOptions.Value;
+        var basePath = options.BasePath;
+        var uploadsPath = Path.IsPathRooted(basePath)
+            ? basePath
+            : Path.Combine(environment.ContentRootPath, basePath);
+
+        var filePath = Path.Combine(uploadsPath, fileName);
+        if (!System.IO.File.Exists(filePath))
+        {
+            return NotFound("Archivo no encontrado.");
+        }
+
+        var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+        if (!provider.TryGetContentType(filePath, out var contentType))
+        {
+            contentType = "application/octet-stream";
+        }
+
+        return PhysicalFile(filePath, contentType, fileName);
+    }
 }

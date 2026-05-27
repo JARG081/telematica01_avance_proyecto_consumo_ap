@@ -8,4 +8,5 @@ public class Collection
     public string CreatedByUserId { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public List<Document> Documents { get; set; } = [];
+    public List<CollectionStudent> EnrolledStudents { get; set; } = [];
 }

@@ -9,13 +9,14 @@ public class EduRAGDbContext : DbContext
 
     public DbSet<Collection> Collections => Set<Collection>();
     public DbSet<Document> Documents => Set<Document>();
+    public DbSet<CollectionStudent> CollectionStudents => Set<CollectionStudent>();
 
     // ESTO FORZARÁ LA CONEXIÓN SIN IMPORTAR EL JSON
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
         {
-            optionsBuilder.UseNpgsql("Host=db.pnftoshyyptroxcyoyib.supabase.co;Port=5432;Database=postgres;Username=postgres;Password=unillanosconnect;SSL Mode=Require;Trust Server Certificate=true");
+            optionsBuilder.UseSqlite("Data Source=edurag.db");
         }
     }
 

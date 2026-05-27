@@ -16,6 +16,8 @@ services:
       ConnectionStrings__DefaultConnection: Data Source=/app/edurag.db
     ports:
       - "5004:5004"
+    volumes:
+      - ./backend/EduRAG/UploadedFiles:/app/UploadedFiles
 
   edurag-frontend:
     build:

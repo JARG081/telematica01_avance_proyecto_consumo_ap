@@ -119,6 +119,46 @@ if (adminUser is null)
     userRepository.Save(adminUser);
 }
 
+// Create professor user if not exists
+var profesorUser = userRepository.FindByUsernameOrEmail("profesor1@correo.com");
+if (profesorUser is null)
+{
+    var saltP = passwordHasher.GenerateSalt();
+    var hashP = passwordHasher.Hash("Profesor123*", saltP);
+    var credP = new Credential(hashP, saltP);
+    profesorUser = new User("profesor1", "profesor1@correo.com", credP);
+    userRepository.Save(profesorUser);
+
+        // Create Professor role if not exists
+        var professorRole = roleRepository.FindByName("profesor");
+        if (professorRole is null)
+        {
+            professorRole = new Role("profesor");
+            // Add permissions as needed, e.g., collections.create, students.enroll
+            professorRole.AddPermission(new Permission("collections.create", "Can create collections"));
+            professorRole.AddPermission(new Permission("students.enroll", "Can enroll students"));
+            roleRepository.Save(professorRole);
+        }
+        // Assign Professor role to profesorUser
+        profesorUser.AddRole(professorRole);
+}
+
+// Create manueladmin user if not exists
+var manuelAdminUser = userRepository.FindByUsernameOrEmail("manueladmin@correo.com");
+if (manuelAdminUser is null)
+{
+    var saltM = passwordHasher.GenerateSalt();
+    var hashM = passwordHasher.Hash("Manuel123", saltM);
+    var credM = new Credential(hashM, saltM);
+    manuelAdminUser = new User("manueladmin", "manueladmin@correo.com", credM);
+    // Assign admin role
+    if (adminRole != null)
+    {
+        manuelAdminUser.AddRole(adminRole);
+    }
+    userRepository.Save(manuelAdminUser);
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

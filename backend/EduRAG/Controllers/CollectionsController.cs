@@ -16,11 +16,24 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<Collection>>> GetCollections()
     {
-        var collections = await dbContext.Collections
-            .Include(c => c.Documents)
-            .OrderByDescending(c => c.CreatedAt)
-            .ToListAsync();
+        var userId = User.FindFirstValue("userId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        var isProfesor = User.IsInRole("profesor");
+        var userEmail = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
 
+        var query = dbContext.Collections
+            .Include(c => c.Documents)
+            .AsQueryable();
+
+        if (isProfesor && !string.IsNullOrWhiteSpace(userId))
+        {
+            query = query.Where(c => c.CreatedByUserId == userId);
+        }
+        else if (!string.IsNullOrWhiteSpace(userEmail))
+        {
+            query = query.Where(c => c.EnrolledStudents.Any(es => es.StudentIdentifier == userEmail));
+        }
+
+        var collections = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
         return Ok(collections);
     }
 
@@ -61,7 +74,7 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
 
         return CreatedAtAction(nameof(GetCollection), new { id = collection.Id }, collection);
     }
-    
+
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "profesor")]
     public async Task<ActionResult<Collection>> UpdateCollection(Guid id, [FromBody] UpdateCollectionRequest request)
@@ -78,6 +91,55 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
         await dbContext.SaveChangesAsync();
 
         return Ok(collection);
+    }
+
+    // GET: api/collections/{id}/students
+    [HttpGet("{id:guid}/students")]
+    [Authorize]
+    public async Task<ActionResult<IEnumerable<CollectionStudent>>> GetEnrolledStudents(Guid id)
+    {
+        var collection = await dbContext.Collections
+            .Include(c => c.EnrolledStudents)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (collection == null)
+            return NotFound();
+
+        return Ok(collection.EnrolledStudents);
+    }
+
+    // POST: api/collections/{id}/students
+    [HttpPost("{id:guid}/students")]
+    [Authorize(Roles = "profesor")]
+    public async Task<ActionResult> EnrollStudent(Guid id, [FromBody] EnrollStudentRequest request)
+    {
+        var collection = await dbContext.Collections.FindAsync(id);
+        if (collection == null)
+            return NotFound();
+
+        var enrollment = new CollectionStudent
+        {
+            CollectionId = id,
+            StudentIdentifier = request.StudentEmail,
+            EnrolledAt = DateTime.UtcNow
+        };
+        dbContext.CollectionStudents.Add(enrollment);
+        await dbContext.SaveChangesAsync();
+        return Ok(enrollment);
+    }
+
+    // DELETE: api/collections/{id}/students/{studentId}
+    [HttpDelete("{id:guid}/students/{studentId:guid}")]
+    [Authorize(Roles = "profesor")]
+    public async Task<IActionResult> RemoveStudent(Guid id, Guid studentId)
+    {
+        var enrollment = await dbContext.CollectionStudents.FirstOrDefaultAsync(cs => cs.Id == studentId && cs.CollectionId == id);
+        if (enrollment == null)
+            return NotFound();
+
+        dbContext.CollectionStudents.Remove(enrollment);
+        await dbContext.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpDelete("{id:guid}")]
