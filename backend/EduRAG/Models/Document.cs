@@ -8,4 +8,5 @@ public class Document
     public string Description { get; set; } = string.Empty;
     public Guid CollectionId { get; set; }
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+    public Collection Collection { get; set; } = null!;
 }

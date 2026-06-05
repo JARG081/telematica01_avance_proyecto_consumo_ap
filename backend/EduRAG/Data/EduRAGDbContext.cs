@@ -24,7 +24,7 @@ public class EduRAGDbContext : DbContext
     {
         modelBuilder.Entity<Collection>()
             .HasMany(c => c.Documents)
-            .WithOne()
+            .WithOne(d => d.Collection)
             .HasForeignKey(d => d.CollectionId)
             .OnDelete(DeleteBehavior.Cascade);
     }

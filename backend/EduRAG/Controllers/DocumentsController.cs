@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using EduRAG.Data;
 using EduRAG.Dtos;
 using EduRAG.Models;
@@ -9,17 +10,22 @@ namespace EduRAG.Controllers;
 
 [ApiController]
 [Route("api")]
+[Authorize] // 🔒 Protegemos todo el controlador
 public class DocumentsController(EduRAGDbContext dbContext) : ControllerBase
 {
+    private string? GetUserId() => User.FindFirstValue("userId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+    private string? GetUserEmail() => User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
+    private bool IsProfesor() => User.IsInRole("profesor");
+
     [HttpPost("collections/{id:guid}/documents")]
     [Authorize(Roles = "profesor")]
     public async Task<ActionResult<Document>> AddDocument(Guid id, [FromBody] CreateDocumentRequest request)
     {
-        var collectionExists = await dbContext.Collections.AnyAsync(c => c.Id == id);
-        if (!collectionExists)
-        {
-            return NotFound("Colección no encontrada.");
-        }
+        var collection = await dbContext.Collections.FindAsync(id);
+        if (collection == null) return NotFound("Colección no encontrada.");
+
+        // 🔒 Validar propiedad: ¿Es el dueño del curso?
+        if (collection.CreatedByUserId != GetUserId()) return Forbid("Solo el dueño del curso puede agregar documentos.");
 
         var document = new Document
         {
@@ -36,12 +42,59 @@ public class DocumentsController(EduRAGDbContext dbContext) : ControllerBase
         return Created($"/api/documents/{document.Id}", document);
     }
 
+    [HttpGet("documents")]
+    public async Task<ActionResult<IEnumerable<Document>>> GetAllDocuments()
+    {
+        var userId = GetUserId();
+        var userEmail = GetUserEmail();
+        var isProfesor = IsProfesor();
+
+        IQueryable<Document> query = dbContext.Documents;
+
+        if (isProfesor && !string.IsNullOrWhiteSpace(userId))
+        {
+            // Profesor: solo sus documentos (de sus colecciones)
+            query = query.Where(d => d.Collection.CreatedByUserId == userId);
+        }
+        else if (!string.IsNullOrWhiteSpace(userEmail))
+        {
+            // Estudiante: documentos de colecciones en las que está matriculado
+            query = query.Where(d => d.Collection.EnrolledStudents.Any(es => es.StudentIdentifier == userEmail));
+        }
+        else
+        {
+            // Sin claims válidos: retornar vacío
+            return Ok(new List<Document>());
+        }
+
+        var documents = await query
+            .Include(d => d.Collection)
+            .OrderByDescending(d => d.UploadedAt)
+            .ToListAsync();
+
+        return Ok(documents);
+    }
+
     [HttpGet("documents/{id:guid}")]
-    [AllowAnonymous]
     public async Task<ActionResult<Document>> GetDocument(Guid id)
     {
         var document = await dbContext.Documents.FindAsync(id);
-        return document is null ? NotFound() : Ok(document);
+        if (document is null) return NotFound();
+
+        // 🔒 Validar acceso de lectura buscando la colección manualmente
+        if (IsProfesor())
+        {
+            var collection = await dbContext.Collections.FindAsync(document.CollectionId);
+            if (collection?.CreatedByUserId != GetUserId()) return Forbid();
+        }
+        else
+        {
+            var isEnrolled = await dbContext.CollectionStudents
+                .AnyAsync(cs => cs.CollectionId == document.CollectionId && cs.StudentIdentifier == GetUserEmail());
+            if (!isEnrolled) return Forbid();
+        }
+
+        return Ok(document);
     }
 
     [HttpPut("documents/{id:guid}")]
@@ -49,10 +102,11 @@ public class DocumentsController(EduRAGDbContext dbContext) : ControllerBase
     public async Task<ActionResult<Document>> UpdateDocument(Guid id, [FromBody] UpdateDocumentRequest request)
     {
         var document = await dbContext.Documents.FindAsync(id);
-        if (document is null)
-        {
-            return NotFound();
-        }
+        if (document is null) return NotFound();
+
+        // 🔒 Validar propiedad buscando la colección manualmente
+        var collection = await dbContext.Collections.FindAsync(document.CollectionId);
+        if (collection?.CreatedByUserId != GetUserId()) return Forbid("Solo el creador puede editar documentos.");
 
         document.Title = request.Title;
         document.Type = request.Type;
@@ -68,10 +122,11 @@ public class DocumentsController(EduRAGDbContext dbContext) : ControllerBase
     public async Task<IActionResult> DeleteDocument(Guid id)
     {
         var document = await dbContext.Documents.FindAsync(id);
-        if (document is null)
-        {
-            return NotFound();
-        }
+        if (document is null) return NotFound();
+
+        // 🔒 Validar propiedad buscando la colección manualmente
+        var collection = await dbContext.Collections.FindAsync(document.CollectionId);
+        if (collection?.CreatedByUserId != GetUserId()) return Forbid("Solo el creador puede eliminar documentos.");
 
         dbContext.Documents.Remove(document);
         await dbContext.SaveChangesAsync();
