@@ -10,27 +10,36 @@ namespace EduRAG.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // 🔒 CAMBIO 1: Protegemos TODO el controlador a nivel global. Nadie sin JWT entra.
 public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
 {
+    private string? GetUserId() => User.FindFirstValue("userId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+    private string? GetUserEmail() => User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
+    private bool IsProfesor() => User.IsInRole("profesor");
+
     [HttpGet]
-    [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<Collection>>> GetCollections()
     {
-        var userId = User.FindFirstValue("userId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
-        var isProfesor = User.IsInRole("profesor");
-        var userEmail = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
+        var userId = GetUserId();
+        var userEmail = GetUserEmail();
+        var isProfesor = IsProfesor();
 
         var query = dbContext.Collections
             .Include(c => c.Documents)
             .AsQueryable();
 
+        // 🔒 CAMBIO 2: Filtrado estricto. Si no cae en ninguna categoría, no ve nada.
         if (isProfesor && !string.IsNullOrWhiteSpace(userId))
         {
-            query = query.Where(c => c.CreatedByUserId == userId);
+            query = query.Where(c => c.CreatedByUserId == userId); // El profe solo ve sus cursos
         }
         else if (!string.IsNullOrWhiteSpace(userEmail))
         {
-            query = query.Where(c => c.EnrolledStudents.Any(es => es.StudentIdentifier == userEmail));
+            query = query.Where(c => c.EnrolledStudents.Any(es => es.StudentIdentifier == userEmail)); // El estudiante solo ve donde está matriculado
+        }
+        else
+        {
+            return Ok(new List<Collection>()); // Retorna vacío si no hay claims válidos
         }
 
         var collections = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
@@ -38,28 +47,38 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [AllowAnonymous]
     public async Task<ActionResult<Collection>> GetCollection(Guid id)
     {
         var collection = await dbContext.Collections
             .Include(c => c.Documents)
+            .Include(c => c.EnrolledStudents)
             .FirstOrDefaultAsync(c => c.Id == id);
 
-        return collection is null ? NotFound() : Ok(collection);
+        if (collection is null) return NotFound();
+
+        // 🔒 CAMBIO 3: Evitar que un alumno o profe entre a un curso ajeno por URL directa
+        var userId = GetUserId();
+        var userEmail = GetUserEmail();
+
+        if (IsProfesor())
+        {
+            if (collection.CreatedByUserId != userId) return Forbid("No eres el dueño de este curso.");
+        }
+        else
+        {
+            if (!collection.EnrolledStudents.Any(es => es.StudentIdentifier == userEmail))
+                return Forbid("No estás matriculado en este curso.");
+        }
+
+        return Ok(collection);
     }
 
     [HttpPost]
     [Authorize(Roles = "profesor")]
     public async Task<ActionResult<Collection>> CreateCollection([FromBody] CreateCollectionRequest request)
     {
-        var userId = User.FindFirstValue("userId")
-                     ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? User.FindFirstValue("sub");
-
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            return Unauthorized("No se encontró userId en el token.");
-        }
+        var userId = GetUserId();
+        if (string.IsNullOrWhiteSpace(userId)) return Unauthorized("No se encontró userId en el token.");
 
         var collection = new Collection
         {
@@ -80,20 +99,18 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
     public async Task<ActionResult<Collection>> UpdateCollection(Guid id, [FromBody] UpdateCollectionRequest request)
     {
         var collection = await dbContext.Collections.FindAsync(id);
-        if (collection is null)
-        {
-            return NotFound();
-        }
+        if (collection is null) return NotFound();
+
+        // 🔒 CAMBIO 4: Validar propiedad antes de modificar
+        if (collection.CreatedByUserId != GetUserId()) return Forbid("Solo el creador puede editar el curso.");
 
         collection.Name = request.Name;
         collection.Description = request.Description;
 
         await dbContext.SaveChangesAsync();
-
         return Ok(collection);
     }
 
-    // GET: api/collections/{id}/students
     [HttpGet("{id:guid}/students")]
     [Authorize]
     public async Task<ActionResult<IEnumerable<CollectionStudent>>> GetEnrolledStudents(Guid id)
@@ -102,20 +119,28 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
             .Include(c => c.EnrolledStudents)
             .FirstOrDefaultAsync(c => c.Id == id);
 
-        if (collection == null)
-            return NotFound();
+        if (collection == null) return NotFound();
+
+        // Profesores solo ven alumnos de SUS cursos, alumnos matriculados pueden ver a sus compañeros
+        if (IsProfesor() && collection.CreatedByUserId != GetUserId()) return Forbid();
+        if (!IsProfesor() && !collection.EnrolledStudents.Any(es => es.StudentIdentifier == GetUserEmail())) return Forbid();
 
         return Ok(collection.EnrolledStudents);
     }
 
-    // POST: api/collections/{id}/students
     [HttpPost("{id:guid}/students")]
     [Authorize(Roles = "profesor")]
     public async Task<ActionResult> EnrollStudent(Guid id, [FromBody] EnrollStudentRequest request)
     {
-        var collection = await dbContext.Collections.FindAsync(id);
-        if (collection == null)
-            return NotFound();
+        var collection = await dbContext.Collections.Include(c => c.EnrolledStudents).FirstOrDefaultAsync(c => c.Id == id);
+        if (collection == null) return NotFound();
+
+        // 🔒 Validar propiedad
+        if (collection.CreatedByUserId != GetUserId()) return Forbid("Solo el creador puede matricular alumnos.");
+
+        // Evitar duplicados
+        if (collection.EnrolledStudents.Any(es => es.StudentIdentifier == request.StudentEmail))
+            return BadRequest("El estudiante ya está matriculado en este curso.");
 
         var enrollment = new CollectionStudent
         {
@@ -128,14 +153,17 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
         return Ok(enrollment);
     }
 
-    // DELETE: api/collections/{id}/students/{studentId}
     [HttpDelete("{id:guid}/students/{studentId:guid}")]
     [Authorize(Roles = "profesor")]
     public async Task<IActionResult> RemoveStudent(Guid id, Guid studentId)
     {
+        var collection = await dbContext.Collections.FindAsync(id);
+        if (collection == null) return NotFound();
+
+        if (collection.CreatedByUserId != GetUserId()) return Forbid();
+
         var enrollment = await dbContext.CollectionStudents.FirstOrDefaultAsync(cs => cs.Id == studentId && cs.CollectionId == id);
-        if (enrollment == null)
-            return NotFound();
+        if (enrollment == null) return NotFound();
 
         dbContext.CollectionStudents.Remove(enrollment);
         await dbContext.SaveChangesAsync();
@@ -147,10 +175,9 @@ public class CollectionsController(EduRAGDbContext dbContext) : ControllerBase
     public async Task<IActionResult> DeleteCollection(Guid id)
     {
         var collection = await dbContext.Collections.FindAsync(id);
-        if (collection is null)
-        {
-            return NotFound();
-        }
+        if (collection is null) return NotFound();
+
+        if (collection.CreatedByUserId != GetUserId()) return Forbid();
 
         dbContext.Collections.Remove(collection);
         await dbContext.SaveChangesAsync();
